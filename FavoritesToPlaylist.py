@@ -7,6 +7,18 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QPalette, QColor
 from PyQt5.QtCore import Qt
+from pydantic import BaseModel, Field, ValidationError
+from typing import List, Optional
+
+class Song(BaseModel):
+    hash: str
+    levelid: str
+
+class Playlist(BaseModel):
+    playlistTitle: str
+    playlistAuthor: str
+    songs: List[Song]
+    image: Optional[str] = Field(default='base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA...')
 
 class BeatSaberPlaylistConverter(QMainWindow):
     def __init__(self):
@@ -142,25 +154,21 @@ class BeatSaberPlaylistConverter(QMainWindow):
             self.show_error(f"Failed to read input file.\n{str(e)}")
             return
 
-        new_songs = [{'hash': i.replace('custom_level_', ''), 'levelid': i} for i in favs]
+        new_songs = [Song(hash=i.replace('custom_level_', ''), levelid=i) for i in favs]
 
         try:
             with open(output_file, 'r', encoding='utf-8') as f:
                 out_data = json.load(f)
+            playlist = Playlist(**out_data)
         except:
-            out_data = {}
+            playlist = Playlist(playlistTitle=playlist_title, playlistAuthor=playlist_author, songs=[])
 
-        merged = out_data.get('songs', [])
         for s in new_songs:
-            if not any(m['hash'] == s['hash'] for m in merged):
-                merged.append(s)
+            if not any(m.hash == s.hash for m in playlist.songs):
+                playlist.songs.append(s)
 
-        out_data.update({
-            'playlistTitle': playlist_title,
-            'playlistAuthor': playlist_author,
-            'songs': merged,
-            'image': 'base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA...'
-        })
+        playlist.playlistTitle = playlist_title
+        playlist.playlistAuthor = playlist_author
 
         save_path, _ = QFileDialog.getSaveFileName(
             self, "Save Playlist", os.path.join(self.last_dir, output_file),
@@ -169,7 +177,7 @@ class BeatSaberPlaylistConverter(QMainWindow):
         if save_path:
             try:
                 with open(save_path, 'w', encoding='utf-8') as f:
-                    json.dump(out_data, f, ensure_ascii=False)
+                    json.dump(playlist.dict(), f, ensure_ascii=False)
                 self.show_info("Playlist saved successfully.")
             except Exception as e:
                 self.show_error(f"Failed to save playlist.\n{str(e)}")
